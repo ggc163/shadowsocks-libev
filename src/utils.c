@@ -25,12 +25,14 @@
 #endif
 
 #include <stdlib.h>
-#include <unistd.h>
 #include <string.h>
-#include <errno.h>
 #include <ctype.h>
+#ifndef __MINGW32__
+#include <unistd.h>
+#include <errno.h>
 #include <pwd.h>
 #include <grp.h>
+#endif
 
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -55,12 +57,15 @@ FILE *logfile;
 int use_syslog = 0;
 #endif
 
+#ifndef __MINGW32__
 void
 ERROR(const char *s)
 {
     char *msg = strerror(errno);
     LOGE("%s: %s", s, msg);
 }
+
+#endif
 
 int use_tty = 1;
 
@@ -102,6 +107,7 @@ ss_isnumeric(const char *s)
 int
 run_as(const char *user)
 {
+#ifndef __MINGW32__
     if (user[0]) {
         /* Convert user to a long integer if it is a non-negative number.
          * -1 means it is a user name. */
@@ -195,6 +201,9 @@ run_as(const char *user)
         }
 #endif
     }
+#else
+    LOGE("run_as(): not implemented in MinGW port");
+#endif
 
     return 1;
 }
@@ -260,6 +269,12 @@ ss_realloc(void *ptr, size_t new_size)
     return new;
 }
 
+int
+ss_is_ipv6addr(const char *addr)
+{
+    return strcmp(addr, ":") > 0;
+}
+
 void
 usage()
 {
@@ -309,7 +324,7 @@ usage()
     printf(
         "                                  salsa20, chacha20 and chacha20-ietf.\n");
     printf(
-        "                                  The default cipher is rc4-md5.\n");
+        "                                  The default cipher is chacha20-ietf-poly1305.\n");
     printf("\n");
     printf(
         "       [-a <user>]                Run as another user.\n");
@@ -400,6 +415,7 @@ usage()
 void
 daemonize(const char *path)
 {
+#ifndef __MINGW32__
     /* Our process ID and Session ID */
     pid_t pid, sid;
 
@@ -444,6 +460,9 @@ daemonize(const char *path)
     close(STDIN_FILENO);
     close(STDOUT_FILENO);
     close(STDERR_FILENO);
+#else
+    LOGE("daemonize(): not implemented in MinGW port");
+#endif
 }
 
 #ifdef HAVE_SETRLIMIT
@@ -478,18 +497,30 @@ set_nofile(int nofile)
 char *
 get_default_conf(void)
 {
+#ifndef __MINGW32__
     static char sysconf[] = "/etc/shadowsocks-libev/config.json";
-    static char userconf[PATH_MAX] = { 0 };
+    static char *userconf = NULL;
+    static int buf_size   = 0;
     char *conf_home;
 
     conf_home = getenv("XDG_CONFIG_HOME");
 
+    // Memory of userconf only gets allocated once, and will not be
+    // freed. It is used as static buffer.
     if (!conf_home) {
-        strcpy(userconf, getenv("HOME"));
-        strcat(userconf, "/.config/shadowsocks-libev/config.json");
+        if (buf_size == 0) {
+            buf_size = 50 + strlen(getenv("HOME"));
+            userconf = malloc(buf_size);
+        }
+        snprintf(userconf, buf_size, "%s%s", getenv("HOME"),
+                 "/.config/shadowsocks-libev/config.json");
     } else {
-        strcpy(userconf, conf_home);
-        strcat(userconf, "/shadowsocks-libev/config.json");
+        if (buf_size == 0) {
+            buf_size = 50 + strlen(conf_home);
+            userconf = malloc(buf_size);
+        }
+        snprintf(userconf, buf_size, "%s%s", conf_home,
+                 "/shadowsocks-libev/config.json");
     }
 
     // Check if the user-specific config exists.
@@ -498,4 +529,7 @@ get_default_conf(void)
 
     // If not, fall back to the system-wide config.
     return sysconf;
+#else
+    return "config.json";
+#endif
 }

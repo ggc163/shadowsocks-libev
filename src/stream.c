@@ -592,17 +592,21 @@ stream_decrypt(buffer_t *ciphertext, cipher_ctx_t *cipher_ctx, size_t capacity)
     dump("CIPHER", ciphertext->data, ciphertext->len);
 #endif
 
-    brealloc(ciphertext, plaintext->len, capacity);
-    memcpy(ciphertext->data, plaintext->data, plaintext->len);
-    ciphertext->len = plaintext->len;
-
     // Add to bloom filter
     if (cipher_ctx->init == 1) {
         if (cipher->method >= RC4_MD5) {
+            if (ppbloom_check((void *)cipher_ctx->nonce, cipher->nonce_len) == 1) {
+                LOGE("crypto: stream: repeat IV detected");
+                return CRYPTO_ERROR;
+            }
             ppbloom_add((void *)cipher_ctx->nonce, cipher->nonce_len);
             cipher_ctx->init = 2;
         }
     }
+
+    brealloc(ciphertext, plaintext->len, capacity);
+    memcpy(ciphertext->data, plaintext->data, plaintext->len);
+    ciphertext->len = plaintext->len;
 
     return CRYPTO_OK;
 }
@@ -673,8 +677,8 @@ stream_init(const char *pass, const char *key, const char *method)
                 break;
             }
         if (m >= STREAM_CIPHER_NUM) {
-            LOGE("Invalid cipher name: %s, use rc4-md5 instead", method);
-            m = RC4_MD5;
+            LOGE("Invalid cipher name: %s, use chacha20-ietf instead", method);
+            m = CHACHA20IETF;
         }
     }
     if (m == TABLE) {
